@@ -154,10 +154,10 @@ class GreedyAllocator:
 
 # RUN 
 if __name__ == "__main__":
-    df = pd.read_csv("patient_data_short.csv")
+    df = pd.read_csv("patient_data.csv")
     print("Loaded dataset successfully!")
 
-    allocator = GreedyAllocator(num_doctors=10, num_icu=5, total_time_hours=8)
+    allocator = GreedyAllocator(num_doctors=10, num_icu=5, total_time_hours=24)
     allocator.allocate_resources(df)
     metrics = allocator.get_metrics()
 
