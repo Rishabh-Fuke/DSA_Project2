@@ -18,7 +18,7 @@ class TimeIndexedDP:
         self.total_time_hours = total_time_hours
         self.slot_minutes = slot_minutes
         self.num_slots = (total_time_hours * 60) // slot_minutes
-        self.alpha = alpha  # weight for wait time in priority score
+        self.alpha = alpha # weight for wait time in priority score
 
     def allocate_resources(self, df):
         """Main allocation logic using time-indexed DP."""
@@ -109,7 +109,10 @@ class TimeIndexedDP:
         return assignments, total_urgency
 
     def _calculate_metrics(self, df, assignments, sim_start, sim_end, total_urgency):
-        """Compute performance metrics."""
+        """
+        Compute performance metrics.
+        MODIFIED: Only includes the standard metrics to match the Greedy output.
+        """
         assigned_ids = {a['patient_id'] for a in assignments}
         df['assigned'] = df['patient_id'].isin(assigned_ids)
 
@@ -129,6 +132,7 @@ class TimeIndexedDP:
             'ICU': self.num_icu * self.total_time_hours * 60,
         }
 
+        # Calculate Utilization
         util_doctor = (treatment_minutes['Doctor'] / total_capacity['Doctor']) * 100
         util_icu = (treatment_minutes['ICU'] / total_capacity['ICU']) * 100
         avg_util = (util_doctor + util_icu) / 2
@@ -142,9 +146,7 @@ class TimeIndexedDP:
             'avg_wait_time': round(np.mean(wait_times), 2) if wait_times else 0,
             'total_wait_time': int(sum(wait_times)),
             'utilization_rate': round(avg_util, 2),
-            'total_urgency_served': round(total_urgency, 2),
-            'util_doctor': round(util_doctor, 2),
-            'util_icu': round(util_icu, 2)
+            'total_urgency_served': round(total_urgency, 2), # Retaining this but it will be labeled N/A in the print output below
         }
 
 
@@ -154,20 +156,53 @@ class TimeIndexedDP:
 if __name__ == "__main__":
     start = time.time()
 
-    df = pd.read_csv("patient_data.csv")
-    print("Loaded dataset successfully!\n")
+    # --- Data Setup ---
+    try:
+        df = pd.read_csv("patient_data.csv")
+        print("Loaded dataset successfully!\n")
+    except FileNotFoundError:
+        print("Error: 'patient_data.csv' not found. Creating a synthetic dataset for demonstration.")
+        num_patients = 3000
+        start_date = pd.to_datetime('2025-01-01 08:00:00')
+        
+        data = {
+            'patient_id': range(1, num_patients + 1),
+            'arrival_time': [start_date + timedelta(minutes=int(np.random.exponential(1.5))) 
+                             for _ in range(num_patients)],
+            'urgency_score': np.random.randint(1, 21, num_patients), 
+            'treatment_duration': np.random.randint(10, 121, num_patients),
+            'resource_type': np.random.choice(['Doctor', 'ICU'], num_patients, p=[0.75, 0.25])
+        }
+        df = pd.DataFrame(data)
+        df = df.sort_values('arrival_time').reset_index(drop=True)
+        print("Using synthetic data for simulation.")
+    # --------------------------
 
     print("=" * 60)
     print("TIME-INDEXED DP (Urgency + Wait-Time Priority)")
     print("=" * 60)
 
+    # Use the same parameters as the Greedy simulation for comparison
     allocator = TimeIndexedDP(num_doctors=100, num_icu=50, total_time_hours=50, slot_minutes=15, alpha=0.3)
-    metrics, _ = allocator.allocate_resources(df)
+    metrics, _ = allocator.allocate_resources(df.copy()) # Use a copy
 
-    for k, v in metrics.items():
+    # Print only the required metrics to match the Greedy output standard
+    print("\n=== DP RESULTS (Matching Greedy Output) ===")
+    
+    # Define the order and format to match the previous Greedy output
+    output_metrics = {
+        "patients_assigned": metrics['patients_assigned'],
+        "patients_waiting": metrics['patients_waiting'],
+        "avg_wait_time": metrics['avg_wait_time'],
+        "total_wait_time": metrics['total_wait_time'],
+        "utilization_rate": metrics['utilization_rate'],
+        
+    }
+
+    for k, v in output_metrics.items():
         print(f"{k:<25}: {v}")
 
     end = time.time()
     elapsed = round(end - start, 2)
     print(f"\nExecution Time (s): {elapsed}")
-    print("Approx. Time Complexity: O(N * R)")
+    print("Approx. Time Complexity: O(N^2 * R) due to sorting inside while loop")
