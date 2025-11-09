@@ -202,4 +202,3 @@ if __name__ == "__main__":
         print(f"{k:<35}: {v}")
 
     print(f"\nExecution Time (s): {elapsed}")
-    print("Approx. Time Complexity: O(N^2 * R) due to sorting inside while loop")
