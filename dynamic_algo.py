@@ -9,15 +9,16 @@ warnings.filterwarnings("ignore")
 class TimeIndexedDP:
     """
     Time-indexed Dynamic Programming for patient scheduling.
-    Discretizes time into slots and tracks availability of resources (doctors, ICU).
+    Considers both urgency and wait time in allocation.
     """
 
-    def __init__(self, num_doctors=10, num_icu=5, total_time_hours=8, slot_minutes=15):
+    def __init__(self, num_doctors=10, num_icu=5, total_time_hours=8, slot_minutes=15, alpha=0.2):
         self.num_doctors = num_doctors
         self.num_icu = num_icu
         self.total_time_hours = total_time_hours
         self.slot_minutes = slot_minutes
         self.num_slots = (total_time_hours * 60) // slot_minutes
+        self.alpha = alpha  # weight for wait time in priority score
 
     def allocate_resources(self, df):
         """Main allocation logic using time-indexed DP."""
@@ -52,19 +53,24 @@ class TimeIndexedDP:
         return metrics, all_assignments
 
     def _run_dp_for_resource(self, patients, num_resources):
-        """Heuristic time-indexed DP for each resource type."""
+        """Time-indexed DP for each resource type considering urgency + wait time."""
         if len(patients) == 0:
             return [], 0.0
 
         resource_free_time = [0] * num_resources
         assignments, total_urgency = [], 0.0
 
-        # Prioritize by urgency
-        patient_indices = list(range(len(patients)))
-        patient_indices.sort(key=lambda i: -patients.loc[i, 'urgency_score'])
+        # Initially compute priority score
+        patients['priority_score'] = patients['urgency_score']  # initial
 
-        for patient_idx in patient_indices:
+        patient_indices = list(range(len(patients)))
+
+        while patient_indices:
+            # Sort patients dynamically by priority (urgency + alpha * expected wait)
+            patient_indices.sort(key=lambda i: -patients.loc[i, 'priority_score'])
+            patient_idx = patient_indices.pop(0)
             patient = patients.loc[patient_idx]
+
             arrival_slot = patient['arrival_slot']
             duration_slots = patient['duration_slots']
             urgency = patient['urgency_score']
@@ -93,6 +99,13 @@ class TimeIndexedDP:
                 resource_free_time[best_resource] = best_start_slot + duration_slots
                 total_urgency += urgency
 
+                # Update priority scores of remaining patients based on their expected wait
+                for i in patient_indices:
+                    p = patients.loc[i]
+                    # estimated wait = max(0, earliest free slot across resources - arrival slot)
+                    est_wait = max(0, min(resource_free_time) - p['arrival_slot'])
+                    patients.at[i, 'priority_score'] = p['urgency_score'] + self.alpha * est_wait
+
         return assignments, total_urgency
 
     def _calculate_metrics(self, df, assignments, sim_start, sim_end, total_urgency):
@@ -105,11 +118,8 @@ class TimeIndexedDP:
 
         for a in assignments:
             p = df[df['patient_id'] == a['patient_id']].iloc[0]
-
-            # ✅ Convert numpy.int64 → int to avoid TypeError
             start_slot = int(a['start_slot'])
             start_time = sim_start + timedelta(minutes=start_slot * int(self.slot_minutes))
-
             wait = (start_time - p['arrival_time']).total_seconds() / 60
             wait_times.append(max(0, wait))
             treatment_minutes[p['resource_type']] += float(a['duration_minutes'])
@@ -138,7 +148,6 @@ class TimeIndexedDP:
         }
 
 
-
 # ============================================================
 # MAIN EXECUTION
 # ============================================================
@@ -149,10 +158,10 @@ if __name__ == "__main__":
     print("Loaded dataset successfully!\n")
 
     print("=" * 60)
-    print("TIME-INDEXED DP (Urgency-Priority with Time Slots)")
+    print("TIME-INDEXED DP (Urgency + Wait-Time Priority)")
     print("=" * 60)
 
-    allocator = TimeIndexedDP(num_doctors=10, num_icu=5, total_time_hours=24, slot_minutes=15)
+    allocator = TimeIndexedDP(num_doctors=100, num_icu=50, total_time_hours=50, slot_minutes=15, alpha=0.3)
     metrics, _ = allocator.allocate_resources(df)
 
     for k, v in metrics.items():

@@ -69,7 +69,7 @@ class GreedyAllocator:
         doctor_queue = PriorityQueue()
         icu_queue = PriorityQueue()
 
-        self.simulation_end = df['arrival_time'].min() + timedelta(hours=8)
+        self.simulation_end = df['arrival_time'].min() + timedelta(hours=50)
         df = df[df['arrival_time'] <= self.simulation_end].copy()
 
         current_time = df['arrival_time'].min()
@@ -157,7 +157,7 @@ if __name__ == "__main__":
     df = pd.read_csv("patient_data.csv")
     print("Loaded dataset successfully!")
 
-    allocator = GreedyAllocator(num_doctors=10, num_icu=5, total_time_hours=24)
+    allocator = GreedyAllocator(num_doctors=100, num_icu=50, total_time_hours=50)
     allocator.allocate_resources(df)
     metrics = allocator.get_metrics()
 

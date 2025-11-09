@@ -5,25 +5,19 @@ import matplotlib.pyplot as plt
 import time
 import sys
 
-# ============================================================
-# Force UTF-8 encoding on Windows terminals
-# ============================================================
+
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
     pass
 
-# ============================================================
-# CONFIG — scripts and display names
-# ============================================================
+
 scripts = {
     "Dynamic DP": "dynamic_algo.py",
     "Greedy": "greedy_allocation.py"
 }
 
-# ============================================================
-# Function to run and parse script output
-# ============================================================
+
 def run_and_parse(script_name):
     print(f"\nRunning {script_name}...\n")
     start = time.time()
@@ -37,25 +31,24 @@ def run_and_parse(script_name):
             errors='ignore'
         )
         end = time.time()
-        exec_time = round(end - start, 2)
+        exec_time_sec = end - start
+        exec_time_ms = round(exec_time_sec * 1000, 2)  # convert to milliseconds
     except Exception as e:
         print(f"Error running {script_name}: {e}")
-        return {"Execution_Time": None}
+        return {"Execution_Time_ms": None}
 
     if result.returncode != 0:
         print(f"Error running {script_name} (exit code {result.returncode})")
         print("STDERR:\n", result.stderr)
         print("STDOUT:\n", result.stdout)
-        return {"Execution_Time": exec_time}
+        return {"Execution_Time_ms": exec_time_ms}
 
     output = result.stdout
 
-    # Extract key-value pairs like: patients_assigned : 47
     pattern = r"([a-zA-Z_]+)\s*:\s*([0-9.]+|N/A)"
     matches = re.findall(pattern, output)
     metrics = {k: v for k, v in matches}
 
-    # Convert numbers
     for k, v in metrics.items():
         if v != "N/A":
             try:
@@ -63,50 +56,52 @@ def run_and_parse(script_name):
             except ValueError:
                 pass
 
-    metrics["Execution_Time"] = exec_time
+    metrics["Execution_Time_ms"] = exec_time_ms
     return metrics
 
 
-# ============================================================
-# Run all algorithms
-# ============================================================
+# Run all scripts
 results = {}
 for name, script in scripts.items():
     results[name] = run_and_parse(script)
 
-# ============================================================
-# Create DataFrame of results
-# ============================================================
+# Create DataFrame
 df = pd.DataFrame(results).T
 print("\n=== COMPARISON TABLE ===\n")
 print(df.to_string())
 
-# Save CSV file
 df.to_csv("algorithm_comparison.csv", index=True)
 print("\nResults saved as 'algorithm_comparison.csv'")
 
-# ============================================================
-# Visualization
-# ============================================================
+# Metrics to plot
 metrics_to_plot = [
     "patients_assigned",
     "patients_waiting",
     "avg_wait_time",
     "utilization_rate",
     "total_urgency_served",
-    "Execution_Time"
+    "Execution_Time_ms"
 ]
 
 available = [m for m in metrics_to_plot if m in df.columns]
 df_plot = df[available]
 
+# Plot chart
 if not df_plot.empty:
-    df_plot.plot(kind="bar", figsize=(10,6))
+    ax = df_plot.plot(kind="bar", figsize=(10,6))
     plt.title("Algorithm Comparison — Dynamic DP vs Greedy Allocation")
     plt.ylabel("Value")
     plt.xlabel("Algorithm")
     plt.legend(title="Metrics")
     plt.grid(axis="y", linestyle="--", alpha=0.6)
+
+    # Annotate execution time bars at the bottom
+    for p in ax.patches:
+        height = p.get_height()
+        if p.get_x() % 1 == 0:  # rough check for bar
+            ax.annotate(f'{height}', (p.get_x() + p.get_width()/2, height),
+                        ha='center', va='bottom', fontsize=8, rotation=90)
+
     plt.tight_layout()
     plt.savefig("algorithm_comparison.png")
     plt.show()
@@ -114,9 +109,7 @@ if not df_plot.empty:
 else:
     print("\nNo valid metrics found to plot.")
 
-# ============================================================
-# Print time complexities and recommendations
-# ============================================================
+# Time complexities and insights
 print("\n=== TIME COMPLEXITIES ===")
 print("Dynamic DP : O(n × t) — depends on number of patients × time slots")
 print("Greedy     : O(n log n) — sorting + allocation decisions")
