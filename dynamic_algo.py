@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 # global simulation parameters
 SIM_NUM_DOCTORS = 100
 SIM_NUM_ICU = 50
-SIM_TOTAL_TIME_HOURS = 20
+SIM_TOTAL_TIME_HOURS = 50
 
 
 class TimeIndexedDP:
