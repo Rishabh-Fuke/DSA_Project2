@@ -32,16 +32,16 @@ def run_and_parse(script_name):
         )
         end = time.time()
         exec_time_sec = end - start
-        exec_time_ms = round(exec_time_sec * 1000, 2)  # convert to milliseconds
+        exec_time_ms = round(exec_time_sec * 10, 2)
     except Exception as e:
         print(f"Error running {script_name}: {e}")
-        return {"Execution_Time_ms": None}
+        return {"Execution_Time_*10": None}
 
     if result.returncode != 0:
         print(f"Error running {script_name} (exit code {result.returncode})")
         print("STDERR:\n", result.stderr)
         print("STDOUT:\n", result.stdout)
-        return {"Execution_Time_ms": exec_time_ms}
+        return {"Execution_Time_*10": exec_time_ms}
 
     output = result.stdout
 
@@ -56,7 +56,7 @@ def run_and_parse(script_name):
             except ValueError:
                 pass
 
-    metrics["Execution_Time_ms"] = exec_time_ms
+    metrics["Execution_Time_*10"] = exec_time_ms
     return metrics
 
 
@@ -80,34 +80,44 @@ metrics_to_plot = [
     "avg_wait_time",
     "utilization_rate",
     "total_urgency_served",
-    "Execution_Time_ms"
+    "Execution_Time_*10"
 ]
 
 available = [m for m in metrics_to_plot if m in df.columns]
 df_plot = df[available]
 
 # Plot chart
+# Plot chart
 if not df_plot.empty:
     ax = df_plot.plot(kind="bar", figsize=(10,6))
     plt.title("Algorithm Comparison — Dynamic DP vs Greedy Allocation")
     plt.ylabel("Value")
     plt.xlabel("Algorithm")
-    plt.legend(title="Metrics")
     plt.grid(axis="y", linestyle="--", alpha=0.6)
 
-    # Annotate execution time bars at the bottom
-    for p in ax.patches:
-        height = p.get_height()
-        if p.get_x() % 1 == 0:  # rough check for bar
-            ax.annotate(f'{height}', (p.get_x() + p.get_width()/2, height),
-                        ha='center', va='bottom', fontsize=8, rotation=90)
+    # Make Execution_Time_*10 bars translucent
+    for i, bar in enumerate(ax.patches):
+        metric_idx = i % len(df_plot.columns)  # column index
+        col_name = df_plot.columns[metric_idx]
+        if col_name == "Execution_Time_*10":
+            bar.set_alpha(0.4)  # translucent
+        else:
+            bar.set_alpha(1.0)  # solid
 
+        # Annotate all bars
+        height = bar.get_height()
+        ax.annotate(f'{height}', 
+                    (bar.get_x() + bar.get_width()/2, height),
+                    ha='center', va='bottom', fontsize=8, rotation=90)
+
+    plt.legend(title="Metrics")
     plt.tight_layout()
     plt.savefig("algorithm_comparison.png")
     plt.show()
     print("\nChart saved as 'algorithm_comparison.png'")
 else:
     print("\nNo valid metrics found to plot.")
+
 
 # Time complexities and insights
 print("\n=== TIME COMPLEXITIES ===")
