@@ -2,13 +2,21 @@ import pandas as pd
 import numpy as np
 from queue import PriorityQueue
 from datetime import datetime, timedelta
+import time
 import warnings
-import time # Import time module for execution time tracking
 warnings.filterwarnings("ignore")
+
+# ============================================================
+# ⚙️ GLOBAL SIMULATION PARAMETERS (DEFINED ONCE)
+# ============================================================
+SIM_NUM_DOCTORS = 100
+SIM_NUM_ICU = 50
+SIM_TOTAL_TIME_HOURS = 50
 
 
 class ResourcePool:
-    def __init__(self, num_doctors=10, num_icu=5):
+    """Manages the assignment and availability of Doctors and ICU beds."""
+    def __init__(self, num_doctors=SIM_NUM_DOCTORS, num_icu=SIM_NUM_ICU):
         self.doctors = set(range(num_doctors))
         self.icu_beds = set(range(num_icu))
         self.doctor_assignments = {}
@@ -52,10 +60,11 @@ class ResourcePool:
 
 
 class GreedyAllocator:
-    def __init__(self, num_doctors=10, num_icu=5, total_time_hours=8):
+    """Allocates resources based ONLY on urgency score."""
+    def __init__(self, num_doctors, num_icu, total_time_hours):
         self.num_doctors = num_doctors
         self.num_icu = num_icu
-        self.total_time_minutes = total_time_hours * 60
+        self.total_time_hours = total_time_hours
         self.simulation_end = None
         self.resource_pool = ResourcePool(num_doctors, num_icu)
         self.waiting_times = {"Doctor": [], "ICU": []}
@@ -68,6 +77,7 @@ class GreedyAllocator:
         return urgency * 2 
 
     def allocate_resources(self, df):
+        """Main allocation simulation."""
         df['arrival_time'] = pd.to_datetime(df['arrival_time'])
         df = df.sort_values('arrival_time').reset_index(drop=True)
 
@@ -75,13 +85,12 @@ class GreedyAllocator:
         icu_queue = PriorityQueue()
 
         sim_start_time = df['arrival_time'].min()
-        self.simulation_end = sim_start_time + timedelta(hours=50)
+        self.simulation_end = sim_start_time + timedelta(hours=self.total_time_hours)
         df = df[df['arrival_time'] <= self.simulation_end].copy()
 
         current_time = sim_start_time
-        N = len(df) # Total number of patients
 
-        # Process patients in arrival order (Outer loop runs N times)
+        # Process patients in arrival order
         for _, row in df.iterrows():
             patient_time = row['arrival_time']
             
@@ -98,21 +107,18 @@ class GreedyAllocator:
             }
             priority = -self.priority_score(patient['urgency_score'], 0)
             
-            # Queue insertion is O(log Q), where Q is queue size (<= N).
             if patient['resource_type'] == "Doctor":
                 doctor_queue.put((priority, patient))
             else:
                 icu_queue.put((priority, patient))
 
-            # Try to assign from each queue (Inner logic runs 2 times)
+            # Try to assign the highest priority patient from each queue
             for q, rtype in [(doctor_queue, "Doctor"), (icu_queue, "ICU")]:
                 if q.empty():
                     continue
                 
-                # Dequeue is O(log Q)
                 _, p = q.get()
 
-                # get_next_available_resource is O(R) (R = number of resources)
                 resource_id, available_time = self.resource_pool.get_next_available_resource(rtype, current_time)
                 
                 if resource_id is None:
@@ -130,7 +136,6 @@ class GreedyAllocator:
                 self.treatment_times[rtype] += p['treatment_duration']
                 self.resource_pool.assign_resource(rtype, resource_id, start_time, p['treatment_duration'])
                 
-        # Final cleanup O(R)
         for rtype in ["Doctor", "ICU"]:
             assignments = (self.resource_pool.doctor_assignments if rtype == "Doctor"
                            else self.resource_pool.icu_assignments)
@@ -140,13 +145,15 @@ class GreedyAllocator:
                 del assignments[r]
 
     def get_metrics(self):
+        """Calculates and returns key performance metrics."""
         total_assigned = len(self.waiting_times["Doctor"]) + len(self.waiting_times["ICU"])
         total_waiting = len(self.unassigned["Doctor"]) + len(self.unassigned["ICU"])
         all_wait_times = self.waiting_times["Doctor"] + self.waiting_times["ICU"]
         avg_wait = np.mean(all_wait_times) if all_wait_times else 0
         total_wait = np.sum(all_wait_times)
 
-        sim_duration_minutes = 3000 
+        # Utilization calculation: Fixed duration
+        sim_duration_minutes = self.total_time_hours * 60 
         cap_doc = self.num_doctors * sim_duration_minutes
         cap_icu = self.num_icu * sim_duration_minutes
         
@@ -176,8 +183,7 @@ if __name__ == "__main__":
         print("Loaded dataset successfully!\n")
     except FileNotFoundError:
         print("Error: 'patient_data.csv' not found. Creating a synthetic dataset for demonstration.")
-        # Using a large patient count (e.g., 3000) to ensure a measurable execution time
-        num_patients = 3000 
+        num_patients = 3000
         start_date = datetime(2025, 1, 1, 8, 0, 0)
         
         data = {
@@ -193,18 +199,32 @@ if __name__ == "__main__":
         print("Using synthetic data for simulation.")
     # --------------------------
 
-    # Running the simulation with fixed parameters
-    allocator = GreedyAllocator(num_doctors=100, num_icu=50, total_time_hours=50)
-    allocator.allocate_resources(df.copy())
-    metrics = allocator.get_metrics()
-
+    print("=" * 60)
+    print("GREEDY RESULTS (Urgency ONLY Priority)")
+    print("=" * 60)
+    
+    allocator_greedy = GreedyAllocator(
+        num_doctors=SIM_NUM_DOCTORS,
+        num_icu=SIM_NUM_ICU,
+        total_time_hours=SIM_TOTAL_TIME_HOURS
+    )
+    allocator_greedy.allocate_resources(df.copy())
+    metrics_greedy = allocator_greedy.get_metrics()
+    
     end = time.time()
     elapsed = round(end - start, 2)
 
-    print("\n=== GREEDY RESULTS (Urgency ONLY Priority) ===")
-    for k, v in metrics.items():
+    output_metrics_greedy = {
+        "patients_assigned": metrics_greedy['patients_assigned'],
+        "patients_waiting": metrics_greedy['patients_waiting'],
+        "avg_wait_time": metrics_greedy['avg_wait_time'],
+        "total_wait_time": metrics_greedy['total_wait_time'],
+        "utilization_rate": metrics_greedy['utilization_rate'],
+        
+    }
+
+    for k, v in output_metrics_greedy.items():
         print(f"{k:<35}: {v}")
-    
-    # --- OUTPUT REQUESTED ---
+
     print(f"\nExecution Time (s): {elapsed}")
     print("Approx. Time Complexity: O(N * (log N + R))")

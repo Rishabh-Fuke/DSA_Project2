@@ -5,20 +5,27 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
+# ============================================================
+# ⚙️ GLOBAL SIMULATION PARAMETERS (DEFINED ONCE)
+# ============================================================
+SIM_NUM_DOCTORS = 100
+SIM_NUM_ICU = 50
+SIM_TOTAL_TIME_HOURS = 50
+
 
 class TimeIndexedDP:
     """
     Time-indexed Dynamic Programming for patient scheduling.
     Considers both urgency and wait time in allocation.
     """
-
-    def __init__(self, num_doctors=10, num_icu=5, total_time_hours=8, slot_minutes=15, alpha=0.2):
+    def __init__(self, num_doctors, num_icu, total_time_hours, slot_minutes=15, alpha=0.2):
         self.num_doctors = num_doctors
         self.num_icu = num_icu
         self.total_time_hours = total_time_hours
         self.slot_minutes = slot_minutes
-        self.num_slots = (total_time_hours * 60) // slot_minutes
-        self.alpha = alpha # weight for wait time in priority score
+        # Calculate number of slots based on SIM_TOTAL_TIME_HOURS
+        self.num_slots = (total_time_hours * 60) // slot_minutes 
+        self.alpha = alpha  # weight for wait time in priority score
 
     def allocate_resources(self, df):
         """Main allocation logic using time-indexed DP."""
@@ -60,13 +67,11 @@ class TimeIndexedDP:
         resource_free_time = [0] * num_resources
         assignments, total_urgency = [], 0.0
 
-        # Initially compute priority score
-        patients['priority_score'] = patients['urgency_score']  # initial
-
+        patients['priority_score'] = patients['urgency_score']
         patient_indices = list(range(len(patients)))
 
         while patient_indices:
-            # Sort patients dynamically by priority (urgency + alpha * expected wait)
+            # O(N log N) sorting inside the loop makes this method O(N^2 * R) overall.
             patient_indices.sort(key=lambda i: -patients.loc[i, 'priority_score'])
             patient_idx = patient_indices.pop(0)
             patient = patients.loc[patient_idx]
@@ -99,20 +104,16 @@ class TimeIndexedDP:
                 resource_free_time[best_resource] = best_start_slot + duration_slots
                 total_urgency += urgency
 
-                # Update priority scores of remaining patients based on their expected wait
+                # Update priority scores of remaining patients
                 for i in patient_indices:
                     p = patients.loc[i]
-                    # estimated wait = max(0, earliest free slot across resources - arrival slot)
                     est_wait = max(0, min(resource_free_time) - p['arrival_slot'])
                     patients.at[i, 'priority_score'] = p['urgency_score'] + self.alpha * est_wait
 
         return assignments, total_urgency
 
     def _calculate_metrics(self, df, assignments, sim_start, sim_end, total_urgency):
-        """
-        Compute performance metrics.
-        MODIFIED: Only includes the standard metrics to match the Greedy output.
-        """
+        """Compute performance metrics."""
         assigned_ids = {a['patient_id'] for a in assignments}
         df['assigned'] = df['patient_id'].isin(assigned_ids)
 
@@ -132,7 +133,6 @@ class TimeIndexedDP:
             'ICU': self.num_icu * self.total_time_hours * 60,
         }
 
-        # Calculate Utilization
         util_doctor = (treatment_minutes['Doctor'] / total_capacity['Doctor']) * 100
         util_icu = (treatment_minutes['ICU'] / total_capacity['ICU']) * 100
         avg_util = (util_doctor + util_icu) / 2
@@ -146,7 +146,7 @@ class TimeIndexedDP:
             'avg_wait_time': round(np.mean(wait_times), 2) if wait_times else 0,
             'total_wait_time': int(sum(wait_times)),
             'utilization_rate': round(avg_util, 2),
-            'total_urgency_served': round(total_urgency, 2), # Retaining this but it will be labeled N/A in the print output below
+            'total_urgency_served': round(total_urgency, 2),
         }
 
 
@@ -182,27 +182,30 @@ if __name__ == "__main__":
     print("TIME-INDEXED DP (Urgency + Wait-Time Priority)")
     print("=" * 60)
 
-    # Use the same parameters as the Greedy simulation for comparison
-    allocator = TimeIndexedDP(num_doctors=100, num_icu=50, total_time_hours=50, slot_minutes=15, alpha=0.3)
-    metrics, _ = allocator.allocate_resources(df.copy()) # Use a copy
-
-    # Print only the required metrics to match the Greedy output standard
-    print("\n=== DP RESULTS (Matching Greedy Output) ===")
-    
-    # Define the order and format to match the previous Greedy output
-    output_metrics = {
-        "patients_assigned": metrics['patients_assigned'],
-        "patients_waiting": metrics['patients_waiting'],
-        "avg_wait_time": metrics['avg_wait_time'],
-        "total_wait_time": metrics['total_wait_time'],
-        "utilization_rate": metrics['utilization_rate'],
-        
-    }
-
-    for k, v in output_metrics.items():
-        print(f"{k:<25}: {v}")
+    allocator_dp = TimeIndexedDP(
+        num_doctors=SIM_NUM_DOCTORS,
+        num_icu=SIM_NUM_ICU,
+        total_time_hours=SIM_TOTAL_TIME_HOURS,
+        slot_minutes=15,
+        alpha=0.3
+    )
+    metrics_dp, _ = allocator_dp.allocate_resources(df.copy())
 
     end = time.time()
     elapsed = round(end - start, 2)
+
+    # Print only the required metrics to match the Greedy output standard
+    output_metrics_dp = {
+        "patients_assigned": metrics_dp['patients_assigned'],
+        "patients_waiting": metrics_dp['patients_waiting'],
+        "avg_wait_time": metrics_dp['avg_wait_time'],
+        "total_wait_time": metrics_dp['total_wait_time'],
+        "utilization_rate": metrics_dp['utilization_rate'],
+        
+    }
+    
+    for k, v in output_metrics_dp.items():
+        print(f"{k:<35}: {v}")
+
     print(f"\nExecution Time (s): {elapsed}")
     print("Approx. Time Complexity: O(N^2 * R) due to sorting inside while loop")
