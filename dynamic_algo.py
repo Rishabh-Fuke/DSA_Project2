@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 # global simulation parameters
 SIM_NUM_DOCTORS = 100
 SIM_NUM_ICU = 50
-SIM_TOTAL_TIME_HOURS = 50
+SIM_TOTAL_TIME_HOURS = 20
 
 
 class TimeIndexedDP:
@@ -23,12 +23,14 @@ class TimeIndexedDP:
         self.alpha = alpha  # weight for wait time in priority score
 
     def allocate_resources(self, df):
-        # main allocation simulation.
         df['arrival_time'] = pd.to_datetime(df['arrival_time'])
         df = df.sort_values('arrival_time').reset_index(drop=True)
 
         sim_start = df['arrival_time'].min()
         sim_end = sim_start + timedelta(hours=self.total_time_hours)
+
+        # split into in-window and overflow patients
+        overflow_df = df[df['arrival_time'] > sim_end].copy()
         df = df[df['arrival_time'] <= sim_end].copy()
 
         # convert arrival times and durations to slots
@@ -43,19 +45,18 @@ class TimeIndexedDP:
         doctor_patients = df[df['resource_type'] == 'Doctor'].reset_index(drop=True)
         icu_patients = df[df['resource_type'] == 'ICU'].reset_index(drop=True)
 
-        # run DP for each resource
+        # run for each resource
         doc_assignments, doc_urgency = self._run_dp_for_resource(doctor_patients, self.num_doctors)
         icu_assignments, icu_urgency = self._run_dp_for_resource(icu_patients, self.num_icu)
 
         all_assignments = doc_assignments + icu_assignments
         total_urgency = doc_urgency + icu_urgency
 
-        # calculate metrics
-        metrics = self._calculate_metrics(df, all_assignments, sim_start, sim_end, total_urgency)
+        # calculate metrics (include overflow patients)
+        metrics = self._calculate_metrics(df, all_assignments, sim_start, sim_end, total_urgency, overflow_df)
         return metrics, all_assignments
 
     def _run_dp_for_resource(self, patients, num_resources):
-        # time indexed DP allocation
         if len(patients) == 0:
             return [], 0.0
 
@@ -66,6 +67,7 @@ class TimeIndexedDP:
         patient_indices = list(range(len(patients)))
 
         while patient_indices:
+            # sort patients by priority
             patient_indices.sort(key=lambda i: -patients.loc[i, 'priority_score'])
             patient_idx = patient_indices.pop(0)
             patient = patients.loc[patient_idx]
@@ -77,6 +79,7 @@ class TimeIndexedDP:
             best_resource = None
             best_start_slot = None
 
+            # check available resource/time slot
             for res_id in range(num_resources):
                 earliest_start = max(resource_free_time[res_id], arrival_slot)
                 end_slot = earliest_start + duration_slots
@@ -86,6 +89,7 @@ class TimeIndexedDP:
                         best_resource = res_id
                         best_start_slot = earliest_start
 
+            # assign if feasible
             if best_resource is not None:
                 assignments.append({
                     'patient_id': patient['patient_id'],
@@ -106,8 +110,7 @@ class TimeIndexedDP:
 
         return assignments, total_urgency
 
-    def _calculate_metrics(self, df, assignments, sim_start, sim_end, total_urgency):
-        # compute performance metrics
+    def _calculate_metrics(self, df, assignments, sim_start, sim_end, total_urgency, overflow_df=None):
         assigned_ids = {a['patient_id'] for a in assignments}
         df['assigned'] = df['patient_id'].isin(assigned_ids)
 
@@ -133,6 +136,9 @@ class TimeIndexedDP:
 
         assigned_df = df[df['assigned']]
         waiting_df = df[~df['assigned']]
+
+        if overflow_df is not None and not overflow_df.empty:
+            waiting_df = pd.concat([waiting_df, overflow_df], ignore_index=True)
 
         return {
             'patients_assigned': int(len(assigned_df)),
@@ -190,7 +196,6 @@ if __name__ == "__main__":
         "avg_wait_time": metrics_dp['avg_wait_time'],
         "total_wait_time": metrics_dp['total_wait_time'],
         "utilization_rate": metrics_dp['utilization_rate'],
-        
     }
     
     for k, v in output_metrics_dp.items():
