@@ -6,16 +6,14 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-# ============================================================
-# ⚙️ GLOBAL SIMULATION PARAMETERS (DEFINED ONCE)
-# ============================================================
+# global simulation parameters
 SIM_NUM_DOCTORS = 100
 SIM_NUM_ICU = 50
-SIM_TOTAL_TIME_HOURS = 50
+SIM_TOTAL_TIME_HOURS = 1660
 
 
 class ResourcePool:
-    """Manages the assignment and availability of Doctors and ICU beds."""
+    # manages resource assignments and availability
     def __init__(self, num_doctors=SIM_NUM_DOCTORS, num_icu=SIM_NUM_ICU):
         self.doctors = set(range(num_doctors))
         self.icu_beds = set(range(num_icu))
@@ -30,7 +28,7 @@ class ResourcePool:
             assignments = self.icu_assignments
             resources = self.icu_beds
 
-        # Release completed assignments (O(R))
+        # releases completed assignments
         freed = [r for r, t in assignments.items() if t <= current_time]
         for r in freed:
             del assignments[r]
@@ -39,7 +37,7 @@ class ResourcePool:
         if available_now:
             return available_now.pop(), current_time
 
-        # Find earliest future availability (O(R))
+        # finds earliest future availability
         if not assignments:
              return None, None
              
@@ -60,7 +58,7 @@ class ResourcePool:
 
 
 class GreedyAllocator:
-    """Allocates resources based ONLY on urgency score."""
+    # allocates resources based on urgency score only
     def __init__(self, num_doctors, num_icu, total_time_hours):
         self.num_doctors = num_doctors
         self.num_icu = num_icu
@@ -73,11 +71,10 @@ class GreedyAllocator:
 
     @staticmethod
     def priority_score(urgency, wait_time_minutes):
-        """Priority based ONLY on urgency."""
         return urgency * 2 
 
     def allocate_resources(self, df):
-        """Main allocation simulation."""
+        # main allocation simulation.
         df['arrival_time'] = pd.to_datetime(df['arrival_time'])
         df = df.sort_values('arrival_time').reset_index(drop=True)
 
@@ -90,7 +87,7 @@ class GreedyAllocator:
 
         current_time = sim_start_time
 
-        # Process patients in arrival order
+        # process patients in arrival order
         for _, row in df.iterrows():
             patient_time = row['arrival_time']
             
@@ -112,7 +109,7 @@ class GreedyAllocator:
             else:
                 icu_queue.put((priority, patient))
 
-            # Try to assign the highest priority patient from each queue
+            # try to assign the highest priority patient from each queue
             for q, rtype in [(doctor_queue, "Doctor"), (icu_queue, "ICU")]:
                 if q.empty():
                     continue
@@ -145,14 +142,14 @@ class GreedyAllocator:
                 del assignments[r]
 
     def get_metrics(self):
-        """Calculates and returns key performance metrics."""
+        # calculate assigned and waiting patients
         total_assigned = len(self.waiting_times["Doctor"]) + len(self.waiting_times["ICU"])
         total_waiting = len(self.unassigned["Doctor"]) + len(self.unassigned["ICU"])
         all_wait_times = self.waiting_times["Doctor"] + self.waiting_times["ICU"]
         avg_wait = np.mean(all_wait_times) if all_wait_times else 0
         total_wait = np.sum(all_wait_times)
 
-        # Utilization calculation: Fixed duration
+        # utilization calculation: Fixed duration
         sim_duration_minutes = self.total_time_hours * 60 
         cap_doc = self.num_doctors * sim_duration_minutes
         cap_icu = self.num_icu * sim_duration_minutes
@@ -171,13 +168,9 @@ class GreedyAllocator:
         }
 
 
-# ============================================================
-# MAIN EXECUTION
-# ============================================================
 if __name__ == "__main__":
     start = time.time()
 
-    # --- Data Setup ---
     try:
         df = pd.read_csv("patient_data.csv")
         print("Loaded dataset successfully!\n")
@@ -197,7 +190,6 @@ if __name__ == "__main__":
         df = pd.DataFrame(data)
         df = df.sort_values('arrival_time').reset_index(drop=True)
         print("Using synthetic data for simulation.")
-    # --------------------------
 
     print("=" * 60)
     print("GREEDY RESULTS (Urgency ONLY Priority)")
