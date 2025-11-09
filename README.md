@@ -1,115 +1,120 @@
 # Hospital Resource Optimizer
 
-A Python-based hospital resource optimization system that uses Greedy and Dynamic Programming approaches to efficiently allocate doctors and ICU beds to patients, minimizing wait times while maintaining fairness.
+This repository implements two approaches for hospital resource allocation (Doctors and ICU beds): a Time-Indexed Dynamic Programming allocator and a Greedy allocator. The project is designed to evaluate trade-offs between solution quality (minimizing wait and prioritizing urgent patients) and runtime performance.
 
-## Features
+## Quick summary
 
-- **Smart Resource Allocation**: Prioritizes patients based on urgency scores and waiting time
-- **Capacity Analysis**: Uses Little's Law to recommend optimal resource levels
-- **Multiple Resource Types**: Handles both doctors and ICU bed allocations
-- **Performance Metrics**: Tracks wait times, resource utilization, and fairness
-- **Visualization**: Provides insights through heatmaps and timeline plots
+- Algorithms included:
+	- `dynamic_algo.py` — Time-indexed DP that considers urgency and wait-time when scheduling patients into time slots.
+	- `greedy_allocation.py` — Fast greedy allocator that assigns patients to the next available resource using a priority score.
+- Utilities:
+	- `data_generator.py` — Generate synthetic patient CSV data (small and large samples).
+	- `compare_algos.py` — Run both algorithms, collect metrics, save `algorithm_comparison.csv`, and plot a comparison chart.
+	- `test_allocation.py` — Unit tests (pytest) for allocator components.
 
-## Installation
+## Repo layout
 
-1. Clone the repository:
-```bash
-git clone https://github.com/Rishabh-Fuke/DSA_Project2.git
-cd DSA_Project2
-```
+Files you will care about:
 
-2. Create a virtual environment (recommended):
-```bash
+- `data_generator.py` — create `patient_data_short.csv` (by default) for quick experiments.
+- `patient_data_short.csv` / `patient_data.csv` — example datasets (short and large). The main scripts expect `patient_data.csv` by default.
+- `dynamic_algo.py` — the DP implementation; prints metrics like `patients_assigned`, `avg_wait_time`, `utilization_rate`, etc.
+- `greedy_allocation.py` — the greedy implementation; prints similar metrics.
+- `compare_algos.py` — runs both algorithms, saves `algorithm_comparison.csv` and `algorithm_comparison.png`.
+- `test_allocation.py` — tests for allocation and utility functions (run with `pytest`).
+- `requirements.txt` — Python dependencies.
+
+## Requirements
+
+Install dependencies (recommended inside a virtual environment):
+
+```powershell
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
+.\\.venv\\Scripts\\activate
 pip install -r requirements.txt
 ```
 
-## Usage
+The project depends on:
 
-### Generate Sample Data
+- pandas
+- numpy
+- matplotlib
+- pytest (for running tests)
 
-Generate a dataset with 100,000 patient records:
-```bash
+Exact versions are listed in `requirements.txt`.
+
+## How to run
+
+1) Generate small sample data (quick):
+
+```powershell
 python data_generator.py
 ```
 
-### Run Resource Allocation
+This script writes `patient_data_short.csv` by default (the script's print message currently mentions `patient_data.csv` — note that mismatch if you see it).
 
-Basic usage with default settings:
-```bash
+2) Run the Greedy allocator (reads `patient_data.csv` by default):
+
+```powershell
 python greedy_allocation.py
 ```
 
-Specify resource counts and sample size:
-```bash
-python greedy_allocation.py --doctors 20 --icu 10 --sample 1000
+3) Run the Dynamic (DP) allocator:
+
+```powershell
+python dynamic_algo.py
 ```
 
-### Generate Visualizations
+Both scripts print metrics to stdout (keys like `patients_assigned`, `avg_wait_time`, `utilization_rate`, `total_urgency_served`) that `compare_algos.py` parses automatically.
 
-Create resource analysis plots:
-```bash
-python visualize.py --sample 1000 --hours 24
+4) Compare algorithms and plot results (runs both scripts and saves outputs):
+
+```powershell
+python compare_algos.py
 ```
 
-This will generate:
-- `resource_analysis.png`: Heatmaps showing wait times and utilization
-- `resource_timeline.png`: Timeline of resource usage
+This will produce:
 
-### Run Tests
+- `algorithm_comparison.csv` — CSV summary of metrics per algorithm.
+- `algorithm_comparison.png` — bar chart comparing metrics.
 
-Run the test suite:
-```bash
-pytest test_allocation.py -v
+## Tests
+
+Run unit tests with pytest:
+
+```powershell
+pytest -q
 ```
 
-## Project Structure
+Note: Some tests in `test_allocation.py` reference helper functions and fields that may be named slightly differently depending on local edits. If a test fails, check variable names in the allocator implementation.
 
-- `data_generator.py`: Generates synthetic patient data
-- `greedy_allocation.py`: Implements greedy resource allocation algorithm
-- `visualize.py`: Creates analysis plots and visualizations
-- `test_allocation.py`: Unit tests for allocation logic
-- `requirements.txt`: Project dependencies
+## Input CSV format
 
-## Input Data Format
+The allocator scripts expect a CSV with these columns:
 
-The system expects a CSV file with the following columns:
-- `patient_id` (int): Unique identifier
-- `urgency_score` (float): 1-10 scale, higher is more urgent
-- `arrival_time` (timestamp): When the patient arrives
-- `treatment_duration` (int): Minutes needed for treatment
-- `resource_type` (string): "ICU" or "Doctor"
+- `patient_id` (int)
+- `urgency_score` (float) — higher is more urgent (1–10 scale)
+- `arrival_time` (ISO timestamp)
+- `treatment_duration` (int, minutes)
+- `resource_type` (string) — `Doctor` or `ICU`
 
-## Performance Metrics
+Example header:
 
-The system tracks multiple metrics:
-- Average and maximum wait times (overall and per resource)
-- Resource utilization percentages
-- Number of patients processed/unassigned
-- Recommended resource levels based on arrival patterns
+```
+patient_id,urgency_score,arrival_time,treatment_duration,resource_type
+```
 
-## Capacity Analysis
+## Notes and small known issues
 
-Uses Little's Law (L = λW) to calculate minimum required resources:
-- L: Average number of patients in system
-- λ: Arrival rate (patients/hour)
-- W: Average treatment duration
+- `data_generator.py` currently writes `patient_data_short.csv` but prints a message mentioning `patient_data.csv`. This is a minor messaging bug and does not affect file output.
+- `visualize.py` is referenced in an older README but is not present in this repository; use `compare_algos.py` which generates comparison charts from algorithm outputs.
 
-Adds buffer margins for:
-- Peak time surges (+20%)
-- Emergency capacity (+50% for worst case)
+## Suggested next steps / improvements
 
-## Team
+- Add CLI argument parsing to `greedy_allocation.py` and `dynamic_algo.py` so the input file path and resource counts can be passed at runtime (currently hard-coded values are used in the main scripts).
+- Add a small `runner.py` to allow running with different dataset sizes, seeds, and resource configurations easily.
+- Harmonize output metric keys across both allocators so `compare_algos.py` does not need to handle `N/A` or missing columns.
 
-- Rishabh Fuke: Data preparation, Dynamic Programming implementation
-- Neerav Gandhi: Greedy algorithm implementation
-- Siddhant Pallod: Visualization, testing, performance comparison
+## Contact
 
-## License
-
-MIT License
+If you have questions about the code, tests, or data, open an issue or contact the repository authors.
